@@ -146,6 +146,11 @@ df_plot["Valor Corrigido (mil R$)"] = df_plot["Valor Corrigido (R$)"] / 1000
 fig, ax = plt.subplots(figsize=(12, 6), facecolor="#0e1117")  # fundo do canvas
 ax.set_facecolor("#0e1117")  # fundo da área do gráfico
 
+# Linha branca ao redor da área do gráfico
+for spine in ax.spines.values():
+    spine.set_edgecolor("white")
+    spine.set_linewidth(1.2)
+    
 # Plotagem por cenário com cores personalizadas
 for cenario in df_plot["Cenário"].unique():
     dados = df_plot[df_plot["Cenário"] == cenario]
@@ -153,7 +158,7 @@ for cenario in df_plot["Cenário"].unique():
     # Cores específicas
     if cenario == "Cenário 1":
         cor = "white"
-    elif cenario == "Cenário 2":
+    elif cenario == f"Descrição dos valores com saques mensais a partir de {resgate_anos} anos":
         cor = "red"
     elif cenario == "Descrição dos valores sem saques":
         cor = "lightgray"
@@ -164,9 +169,9 @@ for cenario in df_plot["Cenário"].unique():
                  ax=ax, marker="o", color=cor, linewidth=2)
 
 # Estilização
-ax.set_xlabel("Ano", color="white")
-ax.set_ylabel("Valor Corrigido (R$ mil)", color="white")
-ax.legend(title="Cenário", facecolor="#0e1117", labelcolor="white", title_fontsize=11, fontsize=10)
+ax.set_xlabel("Anos", color="white")
+ax.set_ylabel("Valor Corrigido (milhares de reais)", color="white")
+ax.legend(facecolor="#0e1117", labelcolor="white", title_fontsize=11, fontsize=10)
 ax.tick_params(colors="white")
 ax.grid(False)
 
