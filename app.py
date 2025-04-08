@@ -97,9 +97,9 @@ with st.sidebar:
     st.header("Configuração Base")
     valor_inicial = st.number_input("💰 Valor inicial (R$)", 0.0, value=1000.0, step=100.0)
     deposito_mensal = st.number_input("📥 Depósito mensal (R$)", 0.0, value=500.0, step=50.0)
-    taxa_juros = st.number_input("📈 Juros (% ao ano ou mês)", 0.0, value=10.0)
+    taxa_juros = st.number_input("📈 Juros (% ao ano ou mês)", 0.0, value=1.0)
     tipo_juros = st.radio("Tipo de juros", ["Mensal", "Anual"])
-    anos = st.slider("⏳ Anos de investimento", 1, 50, 10)
+    anos = st.slider("⏳ Anos de investimento", 1, 100, 10)
     inflacao = st.number_input("📉 Inflação anual (%)", 0.0, 20.0, value=4.5)
 
     st.header("Cenário 1: Sem Resgate")
@@ -107,8 +107,8 @@ with st.sidebar:
     valor_resgate1 = 0.0
 
     st.header("Cenário 2: Com Resgate")
-    inicio_resgate_anos2 = st.number_input("🎯 Início dos resgates (anos)", 0.0, anos * 1.0, value=2.0, step=0.5)
-    valor_resgate2 = st.number_input("💸 Valor de resgate mensal (R$)", 0.0, value=500.0, step=50.0)
+    inicio_resgate_anos2 = st.number_input("🎯 Início dos resgates (anos)", 0.0, anos * 1.0, value=10.0, step=1.0)
+    valor_resgate2 = st.number_input("💸 Valor de resgate mensal (R$)", 0.0, value=500.0, step=100.0)
     inicio_resgate2 = int(inicio_resgate_anos2 * 12)
 
 df1, resumo1 = calcular_investimento(
