@@ -1,11 +1,17 @@
-
+import io
 import streamlit as st
 import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
-from io import BytesIO
-from fpdf import FPDF
 
 st.set_page_config(page_title="Simulador Comparativo de Investimentos", layout="wide")
+
+# Converter para taxa mensal se necessário
+def converter_para_mensal(taxa, tipo):
+    if tipo == "Anual":
+        return (1 + taxa / 100) ** (1/12) - 1
+    else:
+        return taxa / 100
 
 def calcular_aliquota_ir(dias):
     if dias <= 180:
@@ -17,17 +23,17 @@ def calcular_aliquota_ir(dias):
     else:
         return 0.15
 
-def calcular_investimento(valor_inicial, deposito_mensal, taxa_juros, tipo_juros, anos, inflacao=0.0,
-                           inicio_resgate=None, valor_resgate=0.0):
+def calcular_investimento(nome_cenario, valor_inicial, deposito_mensal, taxa_juros, tipo_juros, anos, inflacao=0.0,
+                          inicio_resgate=None, valor_resgate=0.0):
     meses = anos * 12
     dias_totais = anos * 365
     juros_mensal = taxa_juros / 100 if tipo_juros == "Mensal" else (1 + taxa_juros / 100) ** (1/12) - 1
     inflacao_mensal = (1 + inflacao / 100) ** (1/12) - 1 if inflacao > 0 else 0.0
 
     saldo = valor_inicial
-    saldo_corrigido = valor_inicial
     total_investido = valor_inicial
     resgatado = 0
+    resgatado_corrigido = 0
     saldos = []
 
     for mes in range(meses + 1):
@@ -37,14 +43,18 @@ def calcular_investimento(valor_inicial, deposito_mensal, taxa_juros, tipo_juros
                 saque = min(valor_resgate, saldo)
                 saldo -= saque
                 resgatado += saque
+                saque_corrigido = saque / ((1 + inflacao_mensal) ** mes)
+                resgatado_corrigido += saque_corrigido
             saldo += deposito_mensal
             total_investido += deposito_mensal
 
-        saldo_corrigido = saldo / ((1 + inflacao_mensal) ** mes) if inflacao > 0 else saldo
+        saldo_corrigido_atual = saldo / ((1 + inflacao_mensal) ** mes) if inflacao > 0 else saldo
+
         saldos.append({
             "Mês": mes,
+            "Cenário": nome_cenario,
             "Valor Bruto (R$)": round(saldo, 2),
-            "Valor Corrigido (R$)": round(saldo_corrigido, 2)
+            "Valor Corrigido (R$)": round(saldo_corrigido_atual, 2)
         })
 
     df = pd.DataFrame(saldos)
@@ -53,90 +63,144 @@ def calcular_investimento(valor_inicial, deposito_mensal, taxa_juros, tipo_juros
     aliquota_ir = calcular_aliquota_ir(dias_totais)
     imposto = rendimento_bruto * aliquota_ir
     lucro_liquido = rendimento_bruto - imposto
+    valor_corrigido_final = df["Valor Corrigido (R$)"].iloc[-1]
 
     resumo = {
+        "Cenário": nome_cenario,
         "Total Investido (R$)": round(total_investido, 2),
         "Valor Bruto Final (R$)": round(saldo, 2),
         "Lucro Bruto (R$)": round(rendimento_bruto, 2),
         "Imposto Estimado (R$)": round(imposto, 2),
         "Lucro Líquido (R$)": round(lucro_liquido, 2),
-        "Valor Corrigido pela Inflação (R$)": round(saldo_corrigido, 2),
-        "Total Resgatado (R$)": round(resgatado, 2)
+        "Valor Corrigido pela Inflação (R$)": round(valor_corrigido_final, 2),
+        "Total Resgatado (R$)": round(resgatado, 2),
+        "Total Resgatado Corrigido (R$)": round(resgatado_corrigido, 2)
     }
 
     return df, resumo
 
-def gerar_pdf(df1, resumo1, df2, resumo2):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, "Resumo Comparativo de Investimentos", ln=True, align="C")
-    pdf.set_font("Arial", size=12)
+# Sidebar
+st.sidebar.subheader("Parâmetros da Simulação")
+valor_inicial = st.sidebar.number_input("Valor Inicial (R$)", value=1000.0, step=100.0)
+deposito_mensal = st.sidebar.number_input("Depósito Mensal (R$)", value=500.0, step=100.0)
 
-    pdf.ln(10)
-    pdf.cell(200, 10, "Cenário 1", ln=True)
-    for k, v in resumo1.items():
-        pdf.cell(200, 10, f"{k}: R$ {v}", ln=True)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Taxas de Rendimento")
+taxa_de_juros = st.sidebar.number_input("Taxa de Juros (%)", value=1.0, step=0.1)
+tipo_taxa = st.sidebar.selectbox("Tipo de Taxa", ["Mensal", "Anual"], index=0)
 
-    pdf.ln(10)
-    pdf.cell(200, 10, "Cenário 2", ln=True)
-    for k, v in resumo2.items():
-        pdf.cell(200, 10, f"{k}: R$ {v}", ln=True)
 
-    output = BytesIO()
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
-    output.write(pdf_bytes)
-    output.seek(0)
-    return output
-    
+st.sidebar.markdown("---")
+st.sidebar.subheader("Período de Investimento")
+anos = st.sidebar.slider("Anos de Investimento", 1, 100, value=50)
+inflacao = st.sidebar.slider("Inflação Anual (%)", 0.0, 20.0, value=3.0, step=0.1)
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("Definição dos resgates")
+valor_resgate = st.sidebar.number_input(
+    "Valor de Resgate Mensal", value=10000.0, step=100.0
+)
+
+inicio_resgate_anos = st.sidebar.slider(
+    "Início dos Saques (anos)", min_value=1, max_value=anos, value=25
+)
+resgate_anos = inicio_resgate_anos
+
+# Cálculo do valor corrigido
+inflacao_mensal = (1 + inflacao / 100) ** (1/12) - 1 if inflacao > 0 else 0.0
+fator_inflacao = (1 + inflacao_mensal) ** (inicio_resgate_anos * 12)
+valor_resgate_corrigido = valor_resgate / fator_inflacao if fator_inflacao > 0 else valor_resgate
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Poder de compra comparado")
+st.sidebar.markdown(
+    f"💡 Valor corrigido em **{fator_inflacao*resgate_anos:,.2f}%** acumulados por **{resgate_anos} anos**: R$ {valor_resgate_corrigido:,.2f}", unsafe_allow_html=True
+)
+
+# Cálculo dos cenários
+df1, resumo1 = calcular_investimento("Descrição dos valores sem saques", valor_inicial, deposito_mensal, taxa_de_juros, tipo_taxa, anos)
+df3, resumo3 = calcular_investimento(f"Descrição dos valores com saques mensais a partir de {resgate_anos} anos", valor_inicial, deposito_mensal, taxa_de_juros, tipo_taxa, anos, inflacao, resgate_anos * 12, valor_resgate)
+
+df_total = pd.concat([df1, df3], ignore_index=True)
+df_total["Ano"] = df_total["Mês"] // 12
+df_total["Valor Final (mil)"] = df_total["Valor Corrigido (R$)"] / 1000
+resumo_df = pd.DataFrame([resumo1, resumo3])
+
+# Página principal
 
 st.title("📊 Simulador Comparativo de Investimentos")
-
-with st.sidebar:
-    st.header("Configuração Base")
-    valor_inicial = st.number_input("💰 Valor inicial (R$)", 0.0, value=1000.0, step=100.0)
-    deposito_mensal = st.number_input("📥 Depósito mensal (R$)", 0.0, value=500.0, step=50.0)
-    taxa_juros = st.number_input("📈 Juros (% ao ano ou mês)", 0.0, value=1.0)
-    tipo_juros = st.radio("Tipo de juros", ["Mensal", "Anual"])
-    anos = st.slider("⏳ Anos de investimento", 1, 100, 10)
-    inflacao = st.number_input("📉 Inflação anual (%)", 0.0, 20.0, value=4.5)
-
-    st.header("Cenário 1: Sem Resgate")
-    inicio_resgate1 = None
-    valor_resgate1 = 0.0
-
-    st.header("Cenário 2: Com Resgate")
-    inicio_resgate_anos2 = st.number_input("🎯 Início dos resgates (anos)", 0.0, anos * 1.0, value=10.0, step=1.0)
-    valor_resgate2 = st.number_input("💸 Valor de resgate mensal (R$)", 0.0, value=500.0, step=100.0)
-    inicio_resgate2 = int(inicio_resgate_anos2 * 12)
-
-df1, resumo1 = calcular_investimento(
-    valor_inicial, deposito_mensal, taxa_juros, tipo_juros, anos, inflacao, inicio_resgate1, valor_resgate1
-)
-
-df2, resumo2 = calcular_investimento(
-    valor_inicial, deposito_mensal, taxa_juros, tipo_juros, anos, inflacao, inicio_resgate2, valor_resgate2
-)
-
-st.subheader("📈 Comparação Gráfica entre os Cenários")
-fig, ax = plt.subplots()
-ax.plot(df1["Mês"], df1["Valor Bruto (R$)"], label="Cenário 1 - Sem Resgate")
-ax.plot(df2["Mês"], df2["Valor Bruto (R$)"], label="Cenário 2 - Com Resgate")
-ax.set_xlabel("Meses")
-ax.set_ylabel("Valor Bruto (R$)")
-ax.set_title("Evolução dos Investimentos")
-ax.legend()
-st.pyplot(fig)
+st.markdown("Personalize os parâmetros no menu lateral e compare o desempenho dos investimentos.")
 
 st.subheader("📋 Resumo dos Cenários")
-col1, col2 = st.columns(2)
-with col1:
-    st.write("### Cenário 1 - Sem Resgate")
-    st.write(pd.DataFrame([resumo1]).T.rename(columns={0: "Valor"}))
-with col2:
-    st.write("### Cenário 2 - Com Resgate")
-    st.write(pd.DataFrame([resumo2]).T.rename(columns={0: "Valor"}))
+st.dataframe(resumo_df, use_container_width=True)
 
-pdf = gerar_pdf(df1, resumo1, df2, resumo2)
-st.download_button("📄 Baixar resumo em PDF", data=pdf, file_name="resumo_comparativo.pdf", mime="application/pdf")
+st.subheader("📈 Evolução dos Investimentos (Valor Corrigido)")
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Prepara os dados
+df_plot = df_total.copy()
+df_plot["Ano"] = df_plot["Mês"] // 12
+df_plot["Valor Corrigido (mil R$)"] = df_plot["Valor Corrigido (R$)"] / 1000
+
+# Cria a figura e define fundo #0e1117 em todos os níveis
+fig, ax = plt.subplots(figsize=(12, 6), facecolor="#0e1117")  # fundo do canvas
+ax.set_facecolor("#0e1117")  # fundo da área do gráfico
+
+# Plotagem por cenário com cores personalizadas
+for cenario in df_plot["Cenário"].unique():
+    dados = df_plot[df_plot["Cenário"] == cenario]
+
+    # Cores específicas
+    if cenario == "Cenário 1":
+        cor = "white"
+    elif cenario == "Cenário 2":
+        cor = "red"
+    elif cenario == "Descrição dos valores sem saques":
+        cor = "lightgray"
+    else:
+        cor = "cyan"
+
+    sns.lineplot(data=dados, x="Ano", y="Valor Corrigido (mil R$)", label=cenario,
+                 ax=ax, marker="o", color=cor, linewidth=2)
+
+# Estilização
+ax.set_xlabel("Ano", color="white")
+ax.set_ylabel("Valor Corrigido (R$ mil)", color="white")
+ax.legend(title="Cenário", facecolor="#0e1117", labelcolor="white", title_fontsize=11, fontsize=10)
+ax.tick_params(colors="white")
+ax.grid(False)
+
+# Remove bordas excessivas
+plt.tight_layout()
+
+
+# ✅ Salva o gráfico como imagem com fundo correto
+buf = io.BytesIO()
+fig.savefig(buf, format="png", facecolor="#0e1117", bbox_inches="tight")
+buf.seek(0)
+
+# ✅ Mostra no Streamlit com fundo corrigido
+st.image(buf)
+
+# Mostra no Streamlit
+#st.pyplot(fig)
+
+
+# Botão para exportar
+st.subheader("📥 Exportar Resultados")
+export_button = st.button("📥 Baixar Excel com Tabela e Resumo")
+
+if export_button:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_total.to_excel(writer, index=False, sheet_name='Simulação')
+        resumo_df.to_excel(writer, index=False, sheet_name='Resumo')
+
+    output.seek(0)
+    st.download_button(
+        label="📄 Download do Excel",
+        data=output,
+        file_name="simulacao_investimentos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
