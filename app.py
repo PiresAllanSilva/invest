@@ -131,9 +131,39 @@ resumo_df = pd.DataFrame([resumo1, resumo3])
 st.title("📊 Simulador Comparativo de Investimentos")
 st.markdown("Personalize os parâmetros no menu lateral e compare o desempenho dos investimentos.")
 
+# Tabela de resumo
 st.subheader("📋 Resumo dos Cenários")
-st.dataframe(resumo_df, use_container_width=True)
+resumo_df.index = resumo_df['Cenário']
+showing_dataframe = resumo_df.iloc[:, 1:].T
 
+def df_to_html_centered(df):
+    return df.style\
+        .format("R$ {:,.2f}")\
+        .set_properties(**{"text-align": "center"})\
+        .set_table_styles(
+            [{"selector": "th", "props": [("text-align", "center")]}]
+        )\
+        .to_html()
+
+html_table = df_to_html_centered(showing_dataframe)
+# Centraliza horizontalmente e aplica scroll se necessário
+st.markdown(
+    f"""
+    <div style='
+        display: flex;
+        justify-content: center;
+        padding: 1rem;
+    '>
+        <div style='
+            overflow-x: auto;
+            max-width: 100%;
+        '>
+            {html_table}
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.markdown("---")
 st.subheader("📈 Evolução dos Investimentos (Valor Corrigido)")
 fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -209,3 +239,6 @@ if export_button:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+st.sidebar.markdown("---")
+st.subheader("📈 Tabela intetiva")
+st.dataframe(showing_dataframe, use_container_width=False)
